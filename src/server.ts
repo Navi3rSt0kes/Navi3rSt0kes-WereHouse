@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { z } from "zod";
+import { iniciarBaseDatos } from "./database.js";
 import * as warehouse from "./warehouse.js";
 
 const app = Fastify({ logger: true });
@@ -18,17 +19,19 @@ app.setErrorHandler((error, _request, reply) => {
 });
 app.get("/health", () => ({ estado: "ok" }));
 app.get("/productos", (request) => { const query = z.object({ categoria: z.string().optional() }).parse(request.query); return warehouse.listarCatalogo(query.categoria); });
-app.post("/productos", (request, reply) => { const producto = productoSchema.parse(request.body); const creado = warehouse.crearProducto(producto); return creado ? reply.status(201).send(creado) : reply.status(409).send({ error: "Ya existe un producto con ese id" }); });
+app.post("/productos", async (request, reply) => { const producto = productoSchema.parse(request.body); const creado = await warehouse.crearProducto(producto); return creado ? reply.status(201).send(creado) : reply.status(409).send({ error: "Ya existe un producto con ese id" }); });
 app.get("/categorias", () => warehouse.categorias());
 app.get("/productos/:id", (request, reply) => { const { id } = paramsId.parse(request.params); const producto = warehouse.obtenerProducto(id); return producto ?? reply.status(404).send({ error: "Producto no encontrado" }); });
-app.put("/productos/:id", (request, reply) => { const { id } = paramsId.parse(request.params); const producto = productoSchema.parse(request.body); const actualizado = warehouse.actualizarProducto(id, producto); return actualizado ? actualizado : reply.status(404).send({ error: "Producto no encontrado o id no coincide" }); });
-app.delete("/productos/:id", (request, reply) => { const { id } = paramsId.parse(request.params); const eliminado = warehouse.eliminarProducto(id); return eliminado ? eliminado : reply.status(404).send({ error: "Producto no encontrado o asociado a una reserva" }); });
+app.put("/productos/:id", async (request, reply) => { const { id } = paramsId.parse(request.params); const producto = productoSchema.parse(request.body); const actualizado = await warehouse.actualizarProducto(id, producto); return actualizado ? actualizado : reply.status(404).send({ error: "Producto no encontrado o id no coincide" }); });
+app.delete("/productos/:id", async (request, reply) => { const { id } = paramsId.parse(request.params); const eliminado = await warehouse.eliminarProducto(id); return eliminado ? eliminado : reply.status(404).send({ error: "Producto no encontrado o asociado a una reserva" }); });
 app.get("/buscar", (request) => { const query = filtrosSchema.parse(request.query); return warehouse.buscarProductos(query.q, { tagsRequeridos: query.tagsRequeridos?.split(",").filter(Boolean), tagsExcluidos: query.tagsExcluidos?.split(",").filter(Boolean), precioMax: query.precioMax, categoria: query.categoria, soloDisponibles: query.soloDisponibles }, query.topK); });
 app.get("/productos/:id/sustitutos", (request) => { const { id } = paramsId.parse(request.params); const { topK } = z.object({ topK: z.coerce.number().int().positive().max(50).optional() }).parse(request.query); return warehouse.sustitutos(id, topK); });
 app.post("/carrito/validar", (request) => warehouse.validarCarrito(z.object({ items: z.array(itemSchema) }).parse(request.body).items));
 app.post("/carrito/reservar", (request) => warehouse.reservar(z.object({ items: z.array(itemSchema) }).parse(request.body).items));
-app.post("/reservas/:id/confirmar", (request, reply) => { const resultado = warehouse.confirmar(paramsId.parse(request.params).id); return resultado ?? reply.status(404).send({ error: "Reserva no encontrada" }); });
-app.post("/reservas/:id/liberar", (request, reply) => { const resultado = warehouse.liberar(paramsId.parse(request.params).id); return resultado ?? reply.status(404).send({ error: "Reserva no encontrada" }); });
+app.post("/reservas/:id/confirmar", async (request, reply) => { const resultado = await warehouse.confirmar(paramsId.parse(request.params).id); return resultado ?? reply.status(404).send({ error: "Reserva no encontrada" }); });
+app.post("/reservas/:id/liberar", async (request, reply) => { const resultado = await warehouse.liberar(paramsId.parse(request.params).id); return resultado ?? reply.status(404).send({ error: "Reserva no encontrada" }); });
 app.post("/admin/reset", () => warehouse.reset());
 
+await iniciarBaseDatos();
+await warehouse.inicializar();
 app.listen({ port: 8000, host: "0.0.0.0" }).catch((error) => { app.log.error(error); process.exit(1); });

@@ -13,7 +13,7 @@ Queda disponible en `http://localhost:8000`. Para comprobar la lógica sin HTTP:
 npm run smoke
 ```
 
-El catálogo inicia vacío. El CRUD (`POST`, `PUT` y `DELETE /productos`) escribe en `data/products.json` y mantiene la copia en memoria sincronizada. `POST /admin/reset` vuelve a cargar ese archivo.
+El catálogo inicia vacío. El CRUD (`POST`, `PUT` y `DELETE /productos`) persiste en MongoDB Atlas, usando `MONGODB_URI` y `MONGODB_DB` del archivo `.env` local. `POST /admin/reset` vuelve a cargar el catálogo desde MongoDB.
 
 ## Contrato para frontend
 

@@ -1,20 +1,11 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { productos as coleccionProductos } from "./database.js";
 import type { FiltrosBusqueda, ItemCarrito, Producto, ProductoEncontrado, ResultadoBusqueda, ResultadoReserva, ValidacionCarrito } from "./types.js";
 
-const rutaCatalogo = resolve(dirname(fileURLToPath(import.meta.url)), "../data/products.json");
 let productos: Producto[] = [];
 const reservas = new Map<string, ItemCarrito[]>();
 let consecutivoReserva = 0;
 
-function leerCatalogo(): Producto[] {
-  const datos: unknown = JSON.parse(readFileSync(rutaCatalogo, "utf8"));
-  if (!Array.isArray(datos)) throw new Error("El catálogo debe ser un arreglo");
-  return datos as Producto[];
-}
-
-function guardarCatalogo(): void { writeFileSync(rutaCatalogo, `${JSON.stringify(productos, null, 2)}\n`, "utf8"); }
+export async function inicializar(): Promise<void> { productos = await coleccionProductos().find({}).toArray(); }
 
 function normalizar(valor: string): string {
   return valor.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
@@ -50,25 +41,25 @@ export function buscarProductos(query: string, filtros: FiltrosBusqueda = {}, to
 
 export function obtenerProducto(id: string): Producto | null { return productos.find((producto) => producto.id === id) ?? null; }
 export function listarCatalogo(categoria?: string): Producto[] { return productos.filter((producto) => !categoria || producto.categoria === categoria); }
-export function crearProducto(producto: Producto): Producto | null {
+export async function crearProducto(producto: Producto): Promise<Producto | null> {
   if (obtenerProducto(producto.id)) return null;
+  await coleccionProductos().insertOne(producto);
   productos.push({ ...producto });
-  guardarCatalogo();
   return producto;
 }
-export function actualizarProducto(id: string, producto: Producto): Producto | null {
+export async function actualizarProducto(id: string, producto: Producto): Promise<Producto | null> {
   const indice = productos.findIndex((actual) => actual.id === id);
   if (indice === -1 || producto.id !== id) return null;
+  await coleccionProductos().replaceOne({ id }, producto);
   productos[indice] = { ...producto };
-  guardarCatalogo();
   return productos[indice];
 }
-export function eliminarProducto(id: string): Producto | null {
+export async function eliminarProducto(id: string): Promise<Producto | null> {
   if ([...reservas.values()].some((items) => items.some((item) => item.id === id))) return null;
   const indice = productos.findIndex((producto) => producto.id === id);
   if (indice === -1) return null;
   const eliminado = productos.splice(indice, 1)[0];
-  guardarCatalogo();
+  await coleccionProductos().deleteOne({ id });
   return eliminado;
 }
 export function categorias(): { categoria: string; conteo: number }[] {
@@ -107,30 +98,30 @@ export function validarCarrito(items: ItemCarrito[]): ValidacionCarrito {
   return { disponibles, problemas, totalCop, todoDisponible: problemas.length === 0 };
 }
 
-export function reservar(items: ItemCarrito[]): ResultadoReserva {
+export async function reservar(items: ItemCarrito[]): Promise<ResultadoReserva> {
   const validacion = validarCarrito(items);
   if (!validacion.todoDisponible) return { ...validacion, reservada: false };
   const itemsAgrupados = agruparItems(items);
+  await coleccionProductos().bulkWrite(itemsAgrupados.map((item) => ({ updateOne: { filter: { id: item.id }, update: { $inc: { stock: -item.cantidad } } } })));
   for (const item of itemsAgrupados) obtenerProducto(item.id)!.stock -= item.cantidad;
   const reservaId = `r${String(++consecutivoReserva).padStart(4, "0")}`;
   reservas.set(reservaId, itemsAgrupados);
   return { ...validacion, reservaId, reservada: true };
 }
 
-export function confirmar(reservaId: string): { reservaId: string; confirmada: boolean } | null {
+export async function confirmar(reservaId: string): Promise<{ reservaId: string; confirmada: boolean } | null> {
   if (!reservas.has(reservaId)) return null;
   reservas.delete(reservaId);
   return { reservaId, confirmada: true };
 }
 
-export function liberar(reservaId: string): { reservaId: string; liberada: boolean } | null {
+export async function liberar(reservaId: string): Promise<{ reservaId: string; liberada: boolean } | null> {
   const items = reservas.get(reservaId);
   if (!items) return null;
+  await coleccionProductos().bulkWrite(items.map((item) => ({ updateOne: { filter: { id: item.id }, update: { $inc: { stock: item.cantidad } } } })));
   for (const item of items) obtenerProducto(item.id)!.stock += item.cantidad;
   reservas.delete(reservaId);
   return { reservaId, liberada: true };
 }
 
-export function reset(): { productos: number; mensaje: string } { productos = leerCatalogo(); reservas.clear(); consecutivoReserva = 0; return { productos: productos.length, mensaje: "Catálogo restablecido" }; }
-
-reset();
+export async function reset(): Promise<{ productos: number; mensaje: string }> { await inicializar(); reservas.clear(); consecutivoReserva = 0; return { productos: productos.length, mensaje: "Catálogo recargado desde MongoDB" }; }
