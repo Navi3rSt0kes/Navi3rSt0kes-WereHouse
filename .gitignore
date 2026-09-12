@@ -1,2 +1,19 @@
 node_modules/
 dist/
+
+# Archivos locales de herramientas e IDE
+.idea/
+.vscode/
+*.iml
+
+# Variables y secretos locales
+.env
+.env.*
+!.env.example
+
+# Salidas y registros temporales
+coverage/
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
