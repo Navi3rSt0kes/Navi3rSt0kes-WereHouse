@@ -314,19 +314,3 @@ CI (`ci.yml`) runs on pull requests to `develop`/`main` and pushes to `develop`:
   (`POST /products/search`, `GET /carts/{cart_id}`, `POST /carts/{cart_id}/items`) do not match the routes above, so
   connecting the two would require an adapter on the agent side.
 
-## Troubleshooting
-
-| Symptom | Cause | Action |
-| --- | --- | --- |
-| Start-up fails with `Falta MONGODB_URI` | No connection string in the environment or in `.env` | Add `MONGODB_URI` to `.env` |
-| The catalogue is empty on every route | The `products` collection is empty, or `MONGODB_DB` points at the wrong database | Seed the collection, then call `POST /admin/reset` |
-| A catalogue change is not visible | The in-process array is stale (for example after an external write) | Call `POST /admin/reset` or restart the process |
-| `DELETE /productos/:id` returns `404` for a product that exists | The product is part of an active reservation | Release the reservation first with `POST /reservas/:id/liberar` |
-| Browser requests blocked by CORS | The origin is not `http://localhost:5173` or `http://localhost:3000` | The list is hardcoded in `src/server.ts` |
-
-## Known issues
-
-- `api/index.ts` returns a hardcoded `"totalEncontrados": 0` on `/buscar`, regardless of how many results it found.
-- `data/products.json` is an empty array, so the Vercel handler currently serves an empty catalogue.
-- `npm run smoke` asserts nothing, and there is no other automated test coverage.
-- Reservations are in-memory only, so a restart leaves stock decremented with no reservation left to release.
